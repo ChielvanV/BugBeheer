@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { initSupabase, getSupabase } from './supabaseClient';
 
 // Types
@@ -232,8 +232,7 @@ const App: React.FC = () => {
     finally { setLoading(false); }
   }
 
-  // Replace reload function to query Supabase
-  async function reload() {
+  const reload = useCallback(async () => {
     if (!supabase) return;
     setLoading(true); setError(null);
     try {
@@ -242,7 +241,7 @@ const App: React.FC = () => {
       else setBugs(((data as BugRow[]) || []).map(mapRowToBug));
     } catch (e) { console.error(e); setError('Onbekende fout bij laden'); }
     finally { setLoading(false); }
-  }
+  }, [supabase]);
 
   function toggleLabelFilter(l: string) {
     setLabelFilters(prev => prev.includes(l) ? prev.filter(x => x !== l) : [...prev, l]);
@@ -336,18 +335,16 @@ const App: React.FC = () => {
   // Initial load only after auth + client ready
   useEffect(() => {
     if (authUser && supabase) reload();
-  }, [authUser, supabase]);
+  }, [authUser, supabase, reload]);
 
   // Periodic refresh
   useEffect(() => {
     if (!authUser || !supabase) return;
     const interval = setInterval(() => {
-      supabase.from('bugs').select('*').order('created_at', { ascending: true }).then(({ data, error }) => {
-        if (!error && data) setBugs((data as BugRow[]).map(mapRowToBug));
-      });
+      reload();
     }, 30000);
     return () => clearInterval(interval);
-  }, [authUser, supabase]);
+  }, [authUser, supabase, reload]);
 
   // Derived data
   const displayedBugs = useMemo(() => {
