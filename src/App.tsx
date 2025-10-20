@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase } from './supabaseClient';
+import { initSupabase, getSupabase } from './supabaseClient';
 
 // Types
 interface BugRecord {
@@ -84,6 +84,8 @@ const EXPECT_PASS = process.env.REACT_APP_APP_PASSWORD;
 const SESSION_MS = 5 * 60 * 1000; // 5 minuten
 
 const App: React.FC = () => {
+  // Obtain supabase instance (will be null until initSupabase() called after login)
+  const supabase = getSupabase();
   // Auth state
   const [authUser, setAuthUser] = useState<string | null>(() => {
     const storedUser = localStorage.getItem('bugauth_user');
@@ -111,6 +113,10 @@ const App: React.FC = () => {
       setAuthUser(loginUser);
       setLoginError(null);
       setLoginPass('');
+      // Init Supabase client now that user is authenticated
+      initSupabase();
+      // Initial data load after client init
+      reload();
     } else {
       setLoginError('Ongeldige inlog');
     }
@@ -119,6 +125,7 @@ const App: React.FC = () => {
     localStorage.removeItem('bugauth_user');
     localStorage.removeItem('bugauth_ts');
     setAuthUser(null);
+    // No explicit supabase teardown needed; keep singleton null state until next login
   }
   // Auto logout timer based on remaining session time
   useEffect(() => {
@@ -224,6 +231,7 @@ const App: React.FC = () => {
 
   // Replace reload function to query Supabase
   async function reload() {
+    if (!supabase) return;
     setLoading(true); setError(null);
     try {
       const { data, error } = await supabase.from('bugs').select('*').order('created_at', { ascending: true });
@@ -240,6 +248,7 @@ const App: React.FC = () => {
 
   // Replace markCompleted function to update row
   async function markCompleted(id: string) {
+    if (!supabase) { setError('Niet ingelogd'); return; }
     setLoading(true); setError(null);
     try {
       const ts = Date.now();
@@ -252,6 +261,7 @@ const App: React.FC = () => {
 
   // Verwijder een bug (niet als reference)
   async function deleteBug(id: string) {
+    if (!supabase) { setError('Niet ingelogd'); return; }
     const bug = bugs.find(b => b.id === id);
     if (!bug) return;
     if (bug.reference) { alert('Referentie bug kan niet worden verwijderd.'); return; }
@@ -319,18 +329,21 @@ const App: React.FC = () => {
     setSelectedId(null);
   }
 
-  // Initial load effect (no auth gating)
-  useEffect(() => { reload(); }, []);
+  // Initial load only after auth + client ready
+  useEffect(() => {
+    if (authUser && supabase) reload();
+  }, [authUser, supabase]);
 
   // Periodic refresh
   useEffect(() => {
+    if (!authUser || !supabase) return;
     const interval = setInterval(() => {
       supabase.from('bugs').select('*').order('created_at', { ascending: true }).then(({ data, error }) => {
         if (!error && data) setBugs((data as BugRow[]).map(mapRowToBug));
       });
     }, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [authUser, supabase]);
 
   // Derived data
   const displayedBugs = useMemo(() => {
