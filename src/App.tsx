@@ -79,7 +79,63 @@ const RISK_LEGEND: Record<string,string> = {
 // UUID helper for browser
 const genId = () => (typeof crypto !== 'undefined' && (crypto as any).randomUUID ? (crypto as any).randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
 
+const EXPECT_USER = process.env.REACT_APP_APP_USERNAME;
+const EXPECT_PASS = process.env.REACT_APP_APP_PASSWORD;
+const SESSION_MS = 5 * 60 * 1000; // 5 minuten
+
 const App: React.FC = () => {
+  // Auth state
+  const [authUser, setAuthUser] = useState<string | null>(() => {
+    const storedUser = localStorage.getItem('bugauth_user');
+    const ts = Number(localStorage.getItem('bugauth_ts')) || 0;
+    if (!storedUser || !ts || Date.now() - ts > SESSION_MS) {
+      localStorage.removeItem('bugauth_user');
+      localStorage.removeItem('bugauth_ts');
+      return null;
+    }
+    return storedUser;
+  });
+  const [loginUser, setLoginUser] = useState('');
+  const [loginPass, setLoginPass] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  function handleLogin(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!EXPECT_USER || !EXPECT_PASS) {
+      setLoginError('Auth niet geconfigureerd');
+      return;
+    }
+    if (loginUser === EXPECT_USER && loginPass === EXPECT_PASS) {
+      localStorage.setItem('bugauth_user', loginUser);
+      localStorage.setItem('bugauth_ts', Date.now().toString());
+      setAuthUser(loginUser);
+      setLoginError(null);
+      setLoginPass('');
+    } else {
+      setLoginError('Ongeldige inlog');
+    }
+  }
+  function handleLogout() {
+    localStorage.removeItem('bugauth_user');
+    localStorage.removeItem('bugauth_ts');
+    setAuthUser(null);
+  }
+  // Auto logout timer based on remaining session time
+  useEffect(() => {
+    if (!authUser) return;
+    const ts = Number(localStorage.getItem('bugauth_ts')) || 0;
+    const elapsed = Date.now() - ts;
+    const remaining = SESSION_MS - elapsed;
+    if (remaining <= 0) {
+      handleLogout();
+      return;
+    }
+    const timer = setTimeout(() => {
+      handleLogout();
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [authUser]);
+
   // Form state
   const [ticket, setTicket] = useState('');
   const [description, setDescription] = useState('');
@@ -323,10 +379,36 @@ const App: React.FC = () => {
   const tabBarStyle: React.CSSProperties = { display: 'flex', gap: '0.25rem', marginBottom: '0.75rem', borderBottom: '2px solid #cbd5e1' };
   function tabStyle(active: boolean): React.CSSProperties { return { position: 'relative', background: active ? '#ffffff' : '#e2e8f0', color: active ? '#0f172a' : '#475569', padding: '0.5rem 1rem', fontSize: '0.7rem', fontWeight: 600, border: '1px solid #cbd5e1', borderBottom: active ? '2px solid #ffffff' : '2px solid #cbd5e1', borderTopLeftRadius: '0.5rem', borderTopRightRadius: '0.5rem', cursor: 'pointer', boxShadow: active ? '0 -1px 4px rgba(0,0,0,0.08)' : 'none', transform: active ? 'translateY(0)' : 'translateY(2px)', transition: 'all 140ms ease', display: 'flex', alignItems: 'center', gap: '0.4rem' }; }
 
+  // Gate UI if not logged in
+  if (!authUser) {
+    return (
+      <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f1f5f9', fontFamily:'system-ui, sans-serif' }}>
+        <form onSubmit={handleLogin} style={{ background:'#ffffff', padding:'1.5rem', borderRadius:12, width:300, display:'flex', flexDirection:'column', gap:'0.75rem', boxShadow:'0 4px 16px rgba(0,0,0,0.08)' }}>
+          <h1 style={{ margin:0, fontSize:'1.1rem', textAlign:'center' }}>Bugbeheer Login</h1>
+          <label style={{ display:'flex', flexDirection:'column', gap:'0.25rem', fontSize:'0.7rem' }}>Gebruiker
+            <input value={loginUser} onChange={e=>setLoginUser(e.target.value)} style={{ padding:'0.5rem', border:'1px solid #cbd5e1', borderRadius:6 }} autoComplete="username" />
+          </label>
+          <label style={{ display:'flex', flexDirection:'column', gap:'0.25rem', fontSize:'0.7rem' }}>Wachtwoord
+            <input type="password" value={loginPass} onChange={e=>setLoginPass(e.target.value)} style={{ padding:'0.5rem', border:'1px solid #cbd5e1', borderRadius:6 }} autoComplete="current-password" />
+          </label>
+          {loginError && <div style={{ fontSize:'0.65rem', color:'#dc2626' }}>{loginError}</div>}
+          <button type="submit" style={{ background:'#0f172a', color:'#fff', padding:'0.6rem 0.9rem', border:'none', borderRadius:6, fontSize:'0.75rem', cursor:'pointer' }}>Inloggen</button>
+          <div style={{ fontSize:'0.55rem', color:'#64748b', textAlign:'center' }}>Let op: sessie verloopt na 5 minuten.</div>
+        </form>
+      </div>
+    );
+  }
+
   // Main screen
   return (
     <div style={containerStyle}>
-      <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>Risicomatrix voor Bugs</h1>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>Risicomatrix voor Bugs</h1>
+        <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+          <SessionCountdown />
+          <button type="button" onClick={handleLogout} style={{ background:'#dc2626', color:'#fff', border:'none', padding:'0.45rem 0.75rem', borderRadius:6, fontSize:'0.65rem', cursor:'pointer' }}>Uitloggen</button>
+        </div>
+      </div>
       <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginTop:'0.25rem', marginBottom:'0.75rem' }}>
         <p style={{ margin:0, fontSize: '0.75rem', color: '#475569' }}>Voer bugs in en beoordeel risico op basis van Impact en Kans.</p>
         {/* Info button moved to Risicomatrix header */}
@@ -591,5 +673,24 @@ const App: React.FC = () => {
     </div>
   );
 };
+// Countdown component
+function SessionCountdown() {
+  const [remaining, setRemaining] = useState(0);
+  useEffect(() => {
+    function update() {
+      const ts = Number(localStorage.getItem('bugauth_ts')) || 0;
+      if (!ts) { setRemaining(0); return; }
+      const rem = SESSION_MS - (Date.now() - ts);
+      setRemaining(rem > 0 ? rem : 0);
+    }
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, []);
+  if (remaining <= 0) return null;
+  const seconds = Math.floor(remaining / 1000) % 60;
+  const minutes = Math.floor(remaining / 60000);
+  return <span style={{ fontSize:'0.6rem', color:'#475569' }}>Verloopt in {minutes}:{seconds.toString().padStart(2,'0')}</span>;
+}
 
 export default App;
