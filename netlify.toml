@@ -1,0 +1,20 @@
+[build]
+  command = "npm run build"
+  publish = "build"
+
+# Environment variables (Supabase URL/Anon Key) should be set in Netlify UI, not committed here.
+# Remove [build.environment] block to avoid accidental key commits.
+
+# SPA fallback for client-side routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"
