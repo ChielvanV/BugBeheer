@@ -85,7 +85,7 @@ const SESSION_MS = 5 * 60 * 1000; // 5 minuten
 
 const App: React.FC = () => {
   // Obtain supabase instance (will be null until initSupabase() called after login)
-  const supabase = getSupabase();
+  const [supabase, setSupabase] = useState(getSupabase());
   // Auth state
   const [authUser, setAuthUser] = useState<string | null>(() => {
     const storedUser = localStorage.getItem('bugauth_user');
@@ -115,6 +115,7 @@ const App: React.FC = () => {
       setLoginPass('');
       // Init Supabase client now that user is authenticated
       initSupabase();
+      setSupabase(getSupabase());
       // Initial data load after client init
       reload();
     } else {
@@ -197,6 +198,7 @@ const App: React.FC = () => {
   async function addBug(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!description.trim()) return;
+    if (!supabase) { setError('Niet ingelogd'); return; }
     const newRow: Partial<BugRow> = {
       id: genId(),
       ticket: ticket.trim() || null,
@@ -219,6 +221,7 @@ const App: React.FC = () => {
   }
 
   async function clearAll() {
+    if (!supabase) { setError('Niet ingelogd'); return; }
     if (!window.confirm('Weet je zeker dat je alle niet-referentie bugs wilt wissen?')) return;
     setLoading(true); setError(null);
     try {
@@ -307,6 +310,7 @@ const App: React.FC = () => {
     e.preventDefault();
     if (!selectedId) return;
     if (!editDescription.trim()) { setEditError('Omschrijving verplicht'); return; }
+    if (!supabase) { setEditError('Niet ingelogd'); return; }
     const changes: Partial<BugRow> = {
       ticket: editTicket.trim() || null,
       description: editDescription.trim(),
