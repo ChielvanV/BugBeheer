@@ -81,7 +81,6 @@ const genId = () => (typeof crypto !== 'undefined' && (crypto as any).randomUUID
 
 const EXPECT_USER = process.env.REACT_APP_APP_USERNAME;
 const EXPECT_PASS = process.env.REACT_APP_APP_PASSWORD;
-const SESSION_MS = 5 * 60 * 1000; // (unused now except in potential future features)
 
 const App: React.FC = () => {
   // Obtain supabase instance (will be null until initSupabase() called after login)
