@@ -130,16 +130,18 @@ const App: React.FC = () => {
     setAuthUser(null);
     // No explicit supabase teardown needed; keep singleton null state until next login
   }
-  // Auto logout after inactivity
+  // Auto logout after 5 min inactivity (poll every 10s)
   useEffect(() => {
     if (!authUser) return;
-    const lastActive = Number(localStorage.getItem(LAST_ACTIVE_KEY)) || 0;
-    const since = Date.now() - lastActive;
-    const remaining = SESSION_MS - since;
-    if (remaining <= 0) { handleLogout(); return; }
-    const timer = setTimeout(handleLogout, remaining);
-    return () => clearTimeout(timer);
-  }, [authUser, bugs, viewTab]); // dependencies cause periodic re-check
+    const check = () => {
+      const lastActive = Number(localStorage.getItem(LAST_ACTIVE_KEY)) || 0;
+      if (!lastActive) { handleLogout(); return; }
+      if (Date.now() - lastActive > SESSION_MS) handleLogout();
+    };
+    const interval = setInterval(check, 10000);
+    check();
+    return () => clearInterval(interval);
+  }, [authUser]);
 
   // Activity listeners to refresh last active timestamp (throttled)
   useEffect(() => {
