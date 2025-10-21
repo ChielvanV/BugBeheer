@@ -114,10 +114,8 @@ const App: React.FC = () => {
       setLoginError(null);
       setLoginPass('');
       // Init Supabase client now that user is authenticated
-      initSupabase();
-      setSupabase(getSupabase());
-      // Initial data load after client init
-      reload();
+      const newClient = initSupabase();
+      setSupabase(newClient); // reload will run via effect once state updates
     } else {
       setLoginError('Ongeldige inlog');
     }
@@ -336,6 +334,14 @@ const App: React.FC = () => {
   useEffect(() => {
     if (authUser && supabase) reload();
   }, [authUser, supabase, reload]);
+
+  // Auto-init Supabase if user already authenticated on page load (e.g. after refresh)
+  useEffect(() => {
+    if (authUser && !supabase) {
+      const newClient = initSupabase();
+      setSupabase(newClient);
+    }
+  }, [authUser, supabase]);
 
   // Periodic refresh
   useEffect(() => {
