@@ -82,6 +82,7 @@ const genId = () => (typeof crypto !== 'undefined' && (crypto as any).randomUUID
 const EXPECT_USER = process.env.REACT_APP_APP_USERNAME;
 const EXPECT_PASS = process.env.REACT_APP_APP_PASSWORD;
 const SESSION_MS = 5 * 60 * 1000; // 5 minuten
+const LAST_ACTIVE_KEY = 'bugauth_last_active';
 
 const App: React.FC = () => {
   // Obtain supabase instance (will be null until initSupabase() called after login)
@@ -89,10 +90,11 @@ const App: React.FC = () => {
   // Auth state
   const [authUser, setAuthUser] = useState<string | null>(() => {
     const storedUser = localStorage.getItem('bugauth_user');
-    const ts = Number(localStorage.getItem('bugauth_ts')) || 0;
-    if (!storedUser || !ts || Date.now() - ts > SESSION_MS) {
+    const lastActive = Number(localStorage.getItem(LAST_ACTIVE_KEY)) || Number(localStorage.getItem('bugauth_ts')) || 0;
+    if (!storedUser || !lastActive || Date.now() - lastActive > SESSION_MS) {
       localStorage.removeItem('bugauth_user');
       localStorage.removeItem('bugauth_ts');
+      localStorage.removeItem(LAST_ACTIVE_KEY);
       return null;
     }
     return storedUser;
@@ -110,6 +112,7 @@ const App: React.FC = () => {
     if (loginUser === EXPECT_USER && loginPass === EXPECT_PASS) {
       localStorage.setItem('bugauth_user', loginUser);
       localStorage.setItem('bugauth_ts', Date.now().toString());
+      localStorage.setItem(LAST_ACTIVE_KEY, Date.now().toString());
       setAuthUser(loginUser);
       setLoginError(null);
       setLoginPass('');
@@ -123,23 +126,35 @@ const App: React.FC = () => {
   function handleLogout() {
     localStorage.removeItem('bugauth_user');
     localStorage.removeItem('bugauth_ts');
+    localStorage.removeItem(LAST_ACTIVE_KEY);
     setAuthUser(null);
     // No explicit supabase teardown needed; keep singleton null state until next login
   }
-  // Auto logout timer based on remaining session time
+  // Auto logout after inactivity
   useEffect(() => {
     if (!authUser) return;
-    const ts = Number(localStorage.getItem('bugauth_ts')) || 0;
-    const elapsed = Date.now() - ts;
-    const remaining = SESSION_MS - elapsed;
-    if (remaining <= 0) {
-      handleLogout();
-      return;
-    }
-    const timer = setTimeout(() => {
-      handleLogout();
-    }, remaining);
+    const lastActive = Number(localStorage.getItem(LAST_ACTIVE_KEY)) || 0;
+    const since = Date.now() - lastActive;
+    const remaining = SESSION_MS - since;
+    if (remaining <= 0) { handleLogout(); return; }
+    const timer = setTimeout(handleLogout, remaining);
     return () => clearTimeout(timer);
+  }, [authUser, bugs, viewTab]); // dependencies cause periodic re-check
+
+  // Activity listeners to refresh last active timestamp (throttled)
+  useEffect(() => {
+    if (!authUser) return;
+    let lastWrite = 0;
+    const markActive = () => {
+      const now = Date.now();
+      // Throttle writes to once per 5s
+      if (now - lastWrite < 5000) return;
+      lastWrite = now;
+      localStorage.setItem(LAST_ACTIVE_KEY, now.toString());
+    };
+    const events: (keyof DocumentEventMap)[] = ['click','keydown','mousemove','scroll','touchstart'];
+    events.forEach(ev => window.addEventListener(ev, markActive, { passive: true }));
+    return () => events.forEach(ev => window.removeEventListener(ev, markActive));
   }, [authUser]);
 
   // Form state
@@ -413,7 +428,7 @@ const App: React.FC = () => {
           </label>
           {loginError && <div style={{ fontSize:'0.65rem', color:'#dc2626' }}>{loginError}</div>}
           <button type="submit" style={{ background:'#0f172a', color:'#fff', padding:'0.6rem 0.9rem', border:'none', borderRadius:6, fontSize:'0.75rem', cursor:'pointer' }}>Inloggen</button>
-          <div style={{ fontSize:'0.55rem', color:'#64748b', textAlign:'center' }}>Let op: sessie verloopt na 5 minuten.</div>
+          <div style={{ fontSize:'0.55rem', color:'#64748b', textAlign:'center' }}>Let op: sessie verloopt na 5 minuten inactiviteit.</div>
         </form>
       </div>
     );
@@ -698,9 +713,9 @@ function SessionCountdown() {
   const [remaining, setRemaining] = useState(0);
   useEffect(() => {
     function update() {
-      const ts = Number(localStorage.getItem('bugauth_ts')) || 0;
-      if (!ts) { setRemaining(0); return; }
-      const rem = SESSION_MS - (Date.now() - ts);
+      const lastActive = Number(localStorage.getItem(LAST_ACTIVE_KEY)) || 0;
+      if (!lastActive) { setRemaining(0); return; }
+      const rem = SESSION_MS - (Date.now() - lastActive);
       setRemaining(rem > 0 ? rem : 0);
     }
     update();
@@ -710,7 +725,7 @@ function SessionCountdown() {
   if (remaining <= 0) return null;
   const seconds = Math.floor(remaining / 1000) % 60;
   const minutes = Math.floor(remaining / 60000);
-  return <span style={{ fontSize:'0.6rem', color:'#475569' }}>Verloopt in {minutes}:{seconds.toString().padStart(2,'0')}</span>;
+  return <span style={{ fontSize:'0.6rem', color:'#475569' }}>Logout na inactiviteit: {minutes}:{seconds.toString().padStart(2,'0')}</span>;
 }
 
 export default App;
